@@ -2,20 +2,27 @@
 export function getMainActivitySource(pkg) {
   return `package ${pkg};
 
+import android.app.DownloadManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.os.Message;
 import android.util.TypedValue;
-import android.net.Uri;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.webkit.CookieManager;
+import android.webkit.DownloadListener;
 import android.webkit.RenderProcessGoneDetail;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -24,6 +31,7 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
+import android.widget.Toast;
 import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.browser.customtabs.CustomTabsIntent;
@@ -41,6 +49,8 @@ public class MainActivity extends AppCompatActivity {
     private boolean splashDismissed = false;
     private long splashShownAt = 0L;
     private String targetUrl;
+    private ValueCallback<Uri[]> uploadMessage;
+    private static final int FILE_CHOOSER_RESULT_CODE = 100;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -143,6 +153,17 @@ public class MainActivity extends AppCompatActivity {
         if (webView != null) {
             webView.onResume();
         }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == FILE_CHOOSER_RESULT_CODE) {
+            if (uploadMessage != null) {
+                uploadMessage.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data));
+                uploadMessage = null;
+            }
+        }
+        super.onActivityResult(requestCode, resultCode, data);
     }
 
     @Override
@@ -310,12 +331,14 @@ public class MainActivity extends AppCompatActivity {
         s.setUseWideViewPort(true);
         s.setLoadWithOverviewMode(true);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        s.setJavaScriptCanOpenWindowsAutomatically(true);
-        s.setSupportMultipleWindows(false);
         s.setAllowContentAccess(true);
         s.setAllowFileAccess(true);
+        s.setAllowFileAccessFromFileURLs(true);
+        s.setAllowUniversalAccessFromFileURLs(true);
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
+        s.setSupportMultipleWindows(true);
+        s.setJavaScriptCanOpenWindowsAutomatically(true);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             CookieManager.getInstance().setAcceptCookie(true);
             CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true);
@@ -324,7 +347,82 @@ public class MainActivity extends AppCompatActivity {
         if (ua != null && !ua.contains("UStationApp")) {
             s.setUserAgentString(ua + " UStationApp/1.0");
         }
+
+        wv.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
+                if (uploadMessage != null) {
+                    uploadMessage.onReceiveValue(null);
+                    uploadMessage = null;
+                }
+                uploadMessage = filePathCallback;
+                Intent intent = fileChooserParams.createIntent();
+                try {
+                    startActivityForResult(intent, FILE_CHOOSER_RESULT_CODE);
+                } catch (Exception e) {
+                    uploadMessage = null;
+                    return false;
+                }
+                return true;
+            }
+
+            @Override
+            public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
+                WebView newView = new WebView(MainActivity.this);
+                WebSettings newSettings = newView.getSettings();
+                newSettings.setJavaScriptEnabled(true);
+                newSettings.setDomStorageEnabled(true);
+                newSettings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+                newSettings.setAllowContentAccess(true);
+                newSettings.setAllowFileAccess(true);
+                newView.setWebViewClient(new WebViewClient() {
+                    @Override
+                    public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                        String url = request.getUrl().toString();
+                        if (isLoginOrLogoutUrl(url)) {
+                            webView.loadUrl(url.replaceAll("/(login|logout|auth).*", "/home"));
+                            rootLayout.removeView(newView);
+                            return true;
+                        }
+                        return false;
+                    }
+                    @Override
+                    public void onPageFinished(WebView view, String url) {
+                        if (url != null && isLoginOrLogoutUrl(url)) {
+                            webView.loadUrl(url.replaceAll("/(login|logout|auth).*", "/home"));
+                            rootLayout.removeView(newView);
+                        }
+                    }
+                });
+                newView.setDownloadListener(createDownloadListener());
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                );
+                newView.setVisibility(View.VISIBLE);
+                rootLayout.addView(newView, lp);
+                WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+                transport.setWebView(newView);
+                resultMsg.sendToTarget();
+                return true;
+            }
+        });
+
+        wv.setDownloadListener(createDownloadListener());
+
         wv.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                String url = request.getUrl().toString();
+                if (url.startsWith("http://") || url.startsWith("https://")) {
+                    return false;
+                }
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                    startActivity(intent);
+                } catch (Exception ignored) {}
+                return true;
+            }
             @Override
             public void onPageFinished(WebView view, String url) {
                 dismissSplashWhenReady();
@@ -366,6 +464,35 @@ public class MainActivity extends AppCompatActivity {
                 return true;
             }
         });
+    }
+
+    private DownloadListener createDownloadListener() {
+        return (url, userAgent, contentDisposition, mimetype, contentLength) -> {
+            try {
+                DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+                request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, Uri.parse(url).getLastPathSegment());
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+                    request.allowScanningByMediaScanner();
+                    request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                }
+                DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+                if (dm != null) {
+                    dm.enqueue(request);
+                    Toast.makeText(MainActivity.this, "下载已开始", Toast.LENGTH_SHORT).show();
+                }
+            } catch (Exception e) {
+                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(intent);
+            }
+        };
+    }
+
+    private boolean isLoginOrLogoutUrl(String url) {
+        if (url == null) return false;
+        String lower = url.toLowerCase();
+        return lower.contains("/login") || lower.contains("/logout") || lower.contains("/auth");
     }
 }
 `;

@@ -148,6 +148,7 @@ jobs:
           npx cap sync android
           test -f android/app/src/main/AndroidManifest.xml
           test -f android/gradlew
+          sed -i '/<\/manifest>/i\    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />' android/app/src/main/AndroidManifest.xml
           node scripts/apply-build-config.mjs
           node scripts/patch-strip-cordova.mjs
           node scripts/patch-android-network.mjs
