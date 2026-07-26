@@ -341,7 +341,7 @@ public class MainActivity extends AppCompatActivity {
                     String errUrl = request.getUrl() != null ? request.getUrl().toString() : "";
                     String errMsg = error != null ? error.getDescription() != null ? error.getDescription().toString() : "" : "";
                     view.evaluateJavascript(
-                        "(function(){try{document.body.innerHTML='<div style=\"display:flex;align-items:center;justify-content:center;height:100vh;background:#0B0F1A;color:#fff;font-family:sans-serif;text-align:center;padding:20px\"><div><h2>\\u7f51\\u7edc\\u52a0\\u8f7d\\u5931\\u8d25</h2><p style=\"opacity:0.7\">\\u8bf7\\u68c0\\u67e5\\u7f51\\u7edc\\u8fde\\u63a5\\u540e\\u91cd\\u8bd5</p><button onclick=\"location.reload()\" style=\"margin-top:16px;padding:8px 24px;border:1px solid #fff;background:transparent;color:#fff;border-radius:4px;font-size:14px\">\\u91cd\\u8bd5</button></div></div>';document.title='';}catch(e){}})();",
+                        "(function(){try{document.body.innerHTML='<div style=\\\"display:flex;align-items:center;justify-content:center;height:100vh;background:#0B0F1A;color:#fff;font-family:sans-serif;text-align:center;padding:20px\\\"><div><h2>\\u7f51\\u7edc\\u52a0\\u8f7d\\u5931\\u8d25</h2><p style=\\\"opacity:0.7\\\">\\u8bf7\\u68c0\\u67e5\\u7f51\\u7edc\\u8fde\\u63a5\\u540e\\u91cd\\u8bd5</p><button onclick=\\\"location.reload()\\\" style=\\\"margin-top:16px;padding:8px 24px;border:1px solid #fff;background:transparent;color:#fff;border-radius:4px;font-size:14px\\\">\\u91cd\\u8bd5</button></div></div>';document.title='';}catch(e){}})();",
                         null
                     );
                 }
