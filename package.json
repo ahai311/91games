@@ -1,19 +1,9 @@
 {
   "name": "91games",
   "version": "1.0.0",
-  "scripts": {
-    "build": "cap add android && cap sync android"
-  },
   "dependencies": {
     "@capacitor/android": "^7.2.1",
     "@capacitor/cli": "^7.2.1",
     "@capacitor/core": "^7.2.1"
-  },
-  "devDependencies": {
-    "@babel/runtime-corejs3": "^7.26.0",
-    "@babel/runtime": "^7.26.0",
-    "bashrc": "^3.0.3",
-    "typescript": "^5.3.3",
-    "prettier": "^3.0.3"
   }
 }
