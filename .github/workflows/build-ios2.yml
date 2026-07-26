@@ -121,6 +121,9 @@ jobs:
       - name: Apply iOS icon assets
         run: node scripts/apply-ios-assets.mjs
 
+      - name: Patch Info.plist for photo library
+        run: node scripts/patch-ios-plist.mjs
+
       - name: Verify iOS shell
         env:
           TARGET_URL: ${{ inputs.target_url }}
