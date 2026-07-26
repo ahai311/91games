@@ -1,5 +1,6 @@
 /**
  * 将 resources/icon.png 写入 iOS AppIcon asset catalog
+ * 现代 Xcode (iOS 13+) 只需要单张 1024x1024 图标
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,67 +17,26 @@ if (!fs.existsSync(iconSrc) || fs.statSync(iconSrc).size < 4096) {
 
 fs.mkdirSync(iosAssets, { recursive: true });
 
-const sizes = [
-  { name: 'icon-20.png', size: 20 },
-  { name: 'icon-29.png', size: 29 },
-  { name: 'icon-40.png', size: 40 },
-  { name: 'icon-58.png', size: 58 },
-  { name: 'icon-60.png', size: 60 },
-  { name: 'icon-76.png', size: 76 },
-  { name: 'icon-80.png', size: 80 },
-  { name: 'icon-87.png', size: 87 },
-  { name: 'icon-120.png', size: 120 },
-  { name: 'icon-152.png', size: 152 },
-  { name: 'icon-167.png', size: 167 },
-  { name: 'icon-180.png', size: 180 },
-  { name: 'icon-1024.png', size: 1024 },
-];
+// Copy as AppIcon.png
+const destIcon = path.join(iosAssets, 'AppIcon.png');
+fs.copyFileSync(iconSrc, destIcon);
+console.log('apply-ios-assets: AppIcon.png copied');
 
-// Copy icon.png as all sizes (iOS will resize at runtime for non-retina)
-for (const { name } of sizes) {
-  fs.copyFileSync(iconSrc, path.join(iosAssets, name));
-  console.log('apply-ios-assets:', name);
-}
-
-// Write Contents.json
-const images = [];
-for (const { name, size } of sizes) {
-  const scale = size <= 29 ? [1, 2, 3] : size <= 80 ? [2, 3] : size <= 87 ? [2, 3] : [1, 2, 3];
-  for (const s of scale) {
-    if (size * s > 1024 && s > 1) continue;
-    images.push({
-      size: `${size}x${size}`,
-      idiom: 'iphone',
-      filename: name,
-      scale: `${s}x`,
-    });
+// Modern single-icon Contents.json (iOS 13+)
+const contents = {
+  images: [
+    {
+      filename: 'AppIcon.png',
+      idiom: 'universal',
+      platform: 'ios',
+      size: '1024x1024'
+    }
+  ],
+  info: {
+    author: 'xcode',
+    version: 1
   }
-}
+};
 
-// iPad entries
-const ipadSizes = [20, 29, 40, 76, 83.5];
-for (const sz of ipadSizes) {
-  const matching = sizes.find(s => Math.abs(s.size - sz) < 0.1);
-  if (!matching) continue;
-  const scale = sz <= 29 ? [1, 2] : [1, 2];
-  for (const s of scale) {
-    images.push({
-      size: `${sz}x${sz}`,
-      idiom: 'ipad',
-      filename: matching.name,
-      scale: `${s}x`,
-    });
-  }
-}
-
-// 1024 App Store
-images.push({
-  size: '1024x1024',
-  idiom: 'ios-marketing',
-  filename: 'icon-1024.png',
-  scale: '1x',
-});
-
-const contents = { images, info: { version: 1, author: 'xcode' } };
 fs.writeFileSync(path.join(iosAssets, 'Contents.json'), JSON.stringify(contents, null, 2));
 console.log('apply-ios-assets: Contents.json written');
