@@ -1,4 +1,4 @@
-/** 系统 WebView + Custom Tabs 回退（唯一引擎） */
+/** 系统 WebView + Custom Tabs 回退（唯一引擎） — v34: state save/restore + crash guard */
 export function getMainActivitySource(pkg) {
   return `package ${pkg};
 
@@ -7,25 +7,30 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
+import android.os.Bundle;
 import android.util.TypedValue;
 import android.net.Uri;
-import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.webkit.CookieManager;
+import android.webkit.RenderProcessGoneDetail;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
+import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.browser.customtabs.CustomTabsIntent;
 import androidx.core.view.WindowCompat;
 
 public class MainActivity extends AppCompatActivity {
-    // shellPatchVersion=33 — splash SKIP top-right
+    // shellPatchVersion=34 — state save/restore + crash guard
     private static final int MIN_CHROME_MAJOR = 80;
     private static final int SPLASH_MIN_MS = 600;
     private WebView webView;
@@ -35,6 +40,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean launchedCustomTab = false;
     private boolean splashDismissed = false;
     private long splashShownAt = 0L;
+    private String targetUrl;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -61,11 +67,11 @@ public class MainActivity extends AppCompatActivity {
         }
         setContentView(rootLayout);
 
-        String url = resolveTargetUrl();
+        targetUrl = resolveTargetUrl();
         int wvMajor = getWebViewChromeMajor();
 
         if (wvMajor > 0 && wvMajor < MIN_CHROME_MAJOR) {
-            if (launchCustomTab(url)) {
+            if (launchCustomTab(targetUrl)) {
                 launchedCustomTab = true;
                 dismissSplashNow();
                 showCustomTabHint();
@@ -81,7 +87,72 @@ public class MainActivity extends AppCompatActivity {
             ViewGroup.LayoutParams.MATCH_PARENT
         ));
         configureWebView(webView);
-        webView.loadUrl(url);
+
+        if (savedInstanceState != null) {
+            webView.restoreState(savedInstanceState);
+        } else {
+            webView.loadUrl(targetUrl);
+        }
+
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                if (launchedCustomTab) {
+                    finish();
+                    return;
+                }
+                if (webView != null && webView.canGoBack()) {
+                    webView.goBack();
+                } else {
+                    finish();
+                }
+            }
+        });
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        if (webView != null) {
+            webView.saveState(outState);
+        }
+    }
+
+    @Override
+    protected void onRestoreInstanceState(Bundle savedInstanceState) {
+        super.onRestoreInstanceState(savedInstanceState);
+        if (webView != null) {
+            webView.restoreState(savedInstanceState);
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        try {
+            CookieManager.getInstance().flush();
+        } catch (Exception ignored) {}
+        if (webView != null) {
+            webView.onPause();
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (webView != null) {
+            webView.onResume();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (webView != null) {
+            webView.stopLoading();
+            webView.destroy();
+            webView = null;
+        }
+        super.onDestroy();
     }
 
     private void addSplashSkipButton() {
@@ -245,7 +316,7 @@ public class MainActivity extends AppCompatActivity {
         s.setAllowFileAccess(true);
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             CookieManager.getInstance().setAcceptCookie(true);
             CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true);
         }
@@ -262,20 +333,39 @@ public class MainActivity extends AppCompatActivity {
                     null
                 );
             }
-        });
-    }
 
-    @Override
-    public void onBackPressed() {
-        if (launchedCustomTab) {
-            finish();
-            return;
-        }
-        if (webView != null && webView.canGoBack()) {
-            webView.goBack();
-        } else {
-            super.onBackPressed();
-        }
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                if (request.isForMainFrame()) {
+                    dismissSplashNow();
+                    String errUrl = request.getUrl() != null ? request.getUrl().toString() : "";
+                    String errMsg = error != null ? error.getDescription() != null ? error.getDescription().toString() : "" : "";
+                    view.evaluateJavascript(
+                        "(function(){try{document.body.innerHTML='<div style=\"display:flex;align-items:center;justify-content:center;height:100vh;background:#0B0F1A;color:#fff;font-family:sans-serif;text-align:center;padding:20px\"><div><h2>\\u7f51\\u7edc\\u52a0\\u8f7d\\u5931\\u8d25</h2><p style=\"opacity:0.7\">\\u8bf7\\u68c0\\u67e5\\u7f51\\u7edc\\u8fde\\u63a5\\u540e\\u91cd\\u8bd5</p><button onclick=\"location.reload()\" style=\"margin-top:16px;padding:8px 24px;border:1px solid #fff;background:transparent;color:#fff;border-radius:4px;font-size:14px\">\\u91cd\\u8bd5</button></div></div>';document.title='';}catch(e){}})();",
+                        null
+                    );
+                }
+            }
+
+            @Override
+            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                if (webView != null) {
+                    webView.stopLoading();
+                    webView.destroy();
+                    webView = null;
+                }
+                webView = new WebView(MainActivity.this);
+                webView.setBackgroundColor(0xFF0B0F1A);
+                webView.setVisibility(View.VISIBLE);
+                rootLayout.addView(webView, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                ));
+                configureWebView(webView);
+                webView.loadUrl(targetUrl != null ? targetUrl : resolveTargetUrl());
+                return true;
+            }
+        });
     }
 }
 `;
