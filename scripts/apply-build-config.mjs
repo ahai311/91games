@@ -129,7 +129,8 @@ const gradlePath = path.join(root, 'android', 'app', 'build.gradle');
 if (fs.existsSync(gradlePath)) {
   let gradle = fs.readFileSync(gradlePath, 'utf8');
   const safeId = appId.replace(/[^a-zA-Z0-9._]/g, '') || 'com.uzhan.app';
-  gradle = gradle.replace(/namespace\s+"[^"]*"/, `namespace "${safeId}"`);
+  const ns = capacitorAppId;
+  gradle = gradle.replace(/namespace\s+"[^"]*"/, `namespace "${ns}"`);
   gradle = gradle.replace(/applicationId\s+"[^"]*"/, `applicationId "${safeId}"`);
   gradle = gradle.replace(/versionCode\s+\d+/, `versionCode ${Number(versionCode) || 1}`);
   gradle = gradle.replace(/versionName\s+"[^"]*"/, `versionName "${versionName}"`);
