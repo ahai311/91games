@@ -62,7 +62,7 @@ public class MainActivity extends AppCompatActivity {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), true);
 
         rootLayout = new FrameLayout(this);
-        rootLayout.setBackgroundColor(0xFF0B0F1A);
+        rootLayout.setBackgroundColor(0xFFFFFFFF);
 
         if (getResources().getBoolean(R.bool.launch_has_splash)) {
             splashView = new ImageView(this);
@@ -90,7 +90,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         webView = new WebView(this);
-        webView.setBackgroundColor(0xFF0B0F1A);
+        webView.setBackgroundColor(0xFFFFFFFF);
         webView.setVisibility(View.INVISIBLE);
         rootLayout.addView(webView, new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -453,6 +453,8 @@ public class MainActivity extends AppCompatActivity {
                     "localStorage.setItem('IS_NATIVE_APP','1');" +
                     "localStorage.setItem('PLATFORM_THEME','white');" +
                     "localStorage.setItem('PLATFORM_DEFAULT_THEME','white');" +
+                    "localStorage.setItem('PLATFORM_THEME_USER','white');" +
+                    "document.documentElement.setAttribute('data-theme','white');" +
                     "document.title='';" +
                     "}catch(e){}})();",
                     null
@@ -480,7 +482,7 @@ public class MainActivity extends AppCompatActivity {
                     webView = null;
                 }
                 webView = new WebView(MainActivity.this);
-                webView.setBackgroundColor(0xFF0B0F1A);
+                webView.setBackgroundColor(0xFFFFFFFF);
                 webView.setVisibility(View.VISIBLE);
                 rootLayout.addView(webView, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
