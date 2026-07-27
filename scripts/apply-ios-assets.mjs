@@ -39,6 +39,18 @@ try {
 }
 fs.rmSync(tempIcon, { force: true });
 
+// Flatten alpha channel — iOS requires RGB (no transparency), otherwise white border appears
+const appIconPath = path.join(iosAssets, 'AppIcon.png');
+try {
+  const tempJpg = path.join(iosAssets, '_temp_icon.jpg');
+  execSync(`sips -s format jpeg -s formatOptions 95 "${appIconPath}" --out "${tempJpg}"`, { stdio: 'pipe' });
+  execSync(`sips -s format png "${tempJpg}" --out "${appIconPath}"`, { stdio: 'pipe' });
+  fs.rmSync(tempJpg, { force: true });
+  console.log('apply-ios-assets: flattened alpha to RGB (no transparency)');
+} catch {
+  console.warn('apply-ios-assets: alpha flatten failed, icon may have white border');
+}
+
 // Modern single-icon Contents.json (iOS 13+)
 const contents = {
   images: [
