@@ -431,13 +431,30 @@ public class MainActivity extends AppCompatActivity {
                 return true;
             }
             @Override
-            public void onPageFinished(WebView view, String url) {
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                // Inject theme and native flag BEFORE page JS runs
                 view.evaluateJavascript(
-                    "(function(){try{localStorage.setItem('IS_NATIVE_APP','1');document.title='';}catch(e){}})();",
+                    "(function(){try{" +
+                    "localStorage.setItem('IS_NATIVE_APP','1');" +
+                    "localStorage.setItem('PLATFORM_THEME','white');" +
+                    "localStorage.setItem('PLATFORM_DEFAULT_THEME','white');" +
+                    "localStorage.setItem('PLATFORM_THEME_USER','white');" +
+                    "}catch(e){}})();",
                     null
                 );
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                // Re-inject after DOM ready (safety net)
                 view.evaluateJavascript(
-                    "(function(){try{localStorage.setItem('IS_NATIVE_APP','1');document.title='';}catch(e){}})();",
+                    "(function(){try{" +
+                    "localStorage.setItem('IS_NATIVE_APP','1');" +
+                    "localStorage.setItem('PLATFORM_THEME','white');" +
+                    "localStorage.setItem('PLATFORM_DEFAULT_THEME','white');" +
+                    "document.title='';" +
+                    "}catch(e){}})();",
                     null
                 );
             }
