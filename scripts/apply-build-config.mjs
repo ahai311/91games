@@ -136,6 +136,15 @@ if (fs.existsSync(gradlePath)) {
   gradle = gradle.replace(/versionName\s+"[^"]*"/, `versionName "${versionName}"`);
   fs.writeFileSync(gradlePath, gradle, 'utf8');
   console.log('android/app/build.gradle id/version updated');
+  const manifestPath = path.join(root, 'android/app/src/main/AndroidManifest.xml');
+  if (fs.existsSync(manifestPath)) {
+    let manifest = fs.readFileSync(manifestPath, 'utf8');
+    if (manifest.includes('package="' + safeId + '"')) {
+      manifest = manifest.replace(/package="[^"]*"/, 'package="' + ns + '"');
+      fs.writeFileSync(manifestPath, manifest, 'utf8');
+      console.log('android manifest package patched');
+    }
+  }
 }
 
 if (fs.existsSync(path.join(root, 'android'))) {
