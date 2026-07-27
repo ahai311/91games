@@ -88,7 +88,11 @@ if (!fs.existsSync(cfgPath)) {
   console.warn('apply-build-config: created missing capacitor.config.json');
 }
 const config = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
-config.appId = appId;
+const capacitorAppId = /^(?:[a-zA-Z][a-zA-Z0-9]*)(?:\.[a-zA-Z][a-zA-Z0-9]*)*$/.test(appId) ? appId : 'com.app.webview';
+if (capacitorAppId !== appId) {
+  console.warn(`apply-build-config: appId "${appId}" invalid for Capacitor, using "${capacitorAppId}" for capacitor.config.json`);
+}
+config.appId = capacitorAppId;
 config.appName = appName;
 
 config.android = {
