@@ -327,6 +327,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void configureWebView(WebView wv) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            WebView.setWebContentsDebuggingEnabled(true);
+        }
         WebSettings s = wv.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
