@@ -144,7 +144,7 @@ jobs:
           SQUARE_ICON_URL: ${{ inputs.square_icon_url }}
         run: |
           rm -rf android
-          npx cap add android --skip-appid-validation
+          npx cap add android
           npx cap sync android
           test -f android/app/src/main/AndroidManifest.xml
           test -f android/gradlew
