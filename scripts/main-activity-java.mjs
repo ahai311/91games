@@ -240,11 +240,7 @@ public class MainActivity extends AppCompatActivity {
         rootLayout.postDelayed(this::dismissSplashNow, 4000);
     }
 
-    /** Called from JS bridge when page is interactive */
-    private void onPageReady() {
-        rootLayout.removeCallbacks(this::onPageReady);
-        dismissSplashNow();
-    }
+
 
     private String resolveTargetUrl() {
         try {
@@ -437,9 +433,8 @@ public class MainActivity extends AppCompatActivity {
                     "(function(){try{localStorage.setItem('IS_NATIVE_APP','1');document.title='';}catch(e){}})();",
                     null
                 );
-                // Poll for interactive login form before dismissing splash
                 view.evaluateJavascript(
-                    "(function(){var i=setInterval(function(){var b=document.querySelector('[data-login-btn],button[type=submit],.login-btn,.submit-btn')||document.querySelector('form');if(b&&typeof b.onclick!=='undefined'||(b&&b.listeners&&b.listeners.click&&b.listeners.click.length>0)){clearInterval(i);AndroidBridge&&AndroidBridge.onPageReady&&AndroidBridge.onPageReady();}},100);setTimeout(function(){clearInterval(i);AndroidBridge&&AndroidBridge.onPageReady&&AndroidBridge.onPageReady();},5000);})();",
+                    "(function(){try{localStorage.setItem('IS_NATIVE_APP','1');document.title='';}catch(e){}})();",
                     null
                 );
             }
