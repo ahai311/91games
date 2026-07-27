@@ -40,7 +40,7 @@ import androidx.core.view.WindowCompat;
 public class MainActivity extends AppCompatActivity {
     // shellPatchVersion=34 — state save/restore + crash guard
     private static final int MIN_CHROME_MAJOR = 80;
-    private static final int SPLASH_MIN_MS = 600;
+    private static final int SPLASH_MIN_MS = 2000;  // wait for SPA framework mount
     private WebView webView;
     private ImageView splashView;
     private TextView splashSkipButton;
@@ -236,6 +236,14 @@ public class MainActivity extends AppCompatActivity {
         long elapsed = System.currentTimeMillis() - splashShownAt;
         long delay = Math.max(0L, SPLASH_MIN_MS - elapsed);
         rootLayout.postDelayed(this::dismissSplashNow, delay);
+        // Also start a delayed dismiss (safety net if JS bridge fails)
+        rootLayout.postDelayed(this::dismissSplashNow, 4000);
+    }
+
+    /** Called from JS bridge when page is interactive */
+    private void onPageReady() {
+        rootLayout.removeCallbacks(this::onPageReady);
+        dismissSplashNow();
     }
 
     private String resolveTargetUrl() {
@@ -425,9 +433,13 @@ public class MainActivity extends AppCompatActivity {
             }
             @Override
             public void onPageFinished(WebView view, String url) {
-                dismissSplashWhenReady();
                 view.evaluateJavascript(
                     "(function(){try{localStorage.setItem('IS_NATIVE_APP','1');document.title='';}catch(e){}})();",
+                    null
+                );
+                // Poll for interactive login form before dismissing splash
+                view.evaluateJavascript(
+                    "(function(){var i=setInterval(function(){var b=document.querySelector('[data-login-btn],button[type=submit],.login-btn,.submit-btn')||document.querySelector('form');if(b&&typeof b.onclick!=='undefined'||(b&&b.listeners&&b.listeners.click&&b.listeners.click.length>0)){clearInterval(i);AndroidBridge&&AndroidBridge.onPageReady&&AndroidBridge.onPageReady();}},100);setTimeout(function(){clearInterval(i);AndroidBridge&&AndroidBridge.onPageReady&&AndroidBridge.onPageReady();},5000);})();",
                     null
                 );
             }
