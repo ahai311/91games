@@ -40,7 +40,7 @@ import androidx.core.view.WindowCompat;
 public class MainActivity extends AppCompatActivity {
     // shellPatchVersion=34 — state save/restore + crash guard
     private static final int MIN_CHROME_MAJOR = 80;
-    private static final int SPLASH_MIN_MS = 2000;  // wait for SPA framework mount
+    private static final int SPLASH_MIN_MS = 3000;  // wait for SPA framework mount
     private WebView webView;
     private ImageView splashView;
     private TextView splashSkipButton;
@@ -237,7 +237,7 @@ public class MainActivity extends AppCompatActivity {
         long delay = Math.max(0L, SPLASH_MIN_MS - elapsed);
         rootLayout.postDelayed(this::dismissSplashNow, delay);
         // Also start a delayed dismiss (safety net if JS bridge fails)
-        rootLayout.postDelayed(this::dismissSplashNow, 4000);
+        rootLayout.postDelayed(this::dismissSplashNow, 3000);
     }
 
 
