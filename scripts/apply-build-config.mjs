@@ -18,7 +18,7 @@ function req(name, fallback = '') {
   return v != null && String(v).trim() !== '' ? String(v).trim() : fallback;
 }
 
-const appId = req('BUNDLE_ID', req('APP_BUNDLE_ID', 'com.91games.app'));
+const appId = req('BUNDLE_ID', req('APP_BUNDLE_ID', 'com.games91.app'));
 const appName = resolveCiAppDisplayName(process.env, root);
 const url = normalizeTargetUrl(req('TARGET_URL', req('APP_TARGET_URL', 'https://example.com/')));
 
@@ -66,7 +66,7 @@ function writeProductionRedirectShell(target) {
 }
 
 const defaultConfig = {
-  appId: 'com.91games.app',
+  appId: 'com.games91.app',
   appName: 'UStation',
   webDir: 'www',
   server: {
@@ -124,7 +124,7 @@ const versionCode = req('VERSION_CODE', '1');
 const gradlePath = path.join(root, 'android', 'app', 'build.gradle');
 if (fs.existsSync(gradlePath)) {
   let gradle = fs.readFileSync(gradlePath, 'utf8');
-  const safeId = appId.replace(/[^a-zA-Z0-9._]/g, '') || 'com.91games.app';
+  const safeId = appId.replace(/[^a-zA-Z0-9._]/g, '') || 'com.games91.app';
   gradle = gradle.replace(/namespace\s+"[^"]*"/, `namespace "${safeId}"`);
   gradle = gradle.replace(/applicationId\s+"[^"]*"/, `applicationId "${safeId}"`);
   gradle = gradle.replace(/versionCode\s+\d+/, `versionCode ${Number(versionCode) || 1}`);
