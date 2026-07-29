@@ -181,6 +181,9 @@ public class MainActivity extends AppCompatActivity {
                 ));
             splashShownAt = System.currentTimeMillis();
             addSplashSkipButton();
+            rootLayout.postDelayed(() -> {
+                if (!splashDismissed) dismissSplashNow();
+            }, 3000);
         }
         setContentView(rootLayout);
 
