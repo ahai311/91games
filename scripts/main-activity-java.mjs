@@ -649,6 +649,43 @@ public class MainActivity extends AppCompatActivity {
                     "  }" +
                     "  return el;" +
                     "};" +
+                    "var _origPushState = history.pushState;" +
+                    "history.pushState = function(){" +
+                    "  _origPushState.apply(this, arguments);" +
+                    "  setTimeout(addChatNav, 100);" +
+                    "};" +
+                    "window.addEventListener('popstate', function(){ setTimeout(addChatNav, 100); });" +
+                    "var _chatNavAdded = false;" +
+                    "function addChatNav(){" +
+                    "  var p = window.location.pathname;" +
+                    "  if(!p.match(/\\/support|\\/messages|\\/kf|\\/chat|\\/service|tawk/i)){" +
+                    "    _chatNavAdded = false;" +
+                    "    return;" +
+                    "  }" +
+                    "  if(_chatNavAdded) return;" +
+                    "  var h = document.createElement('div');" +
+                    "  h.id = '__chatNav__';" +
+                    "  h.style.cssText = 'position:fixed;top:0;left:0;right:0;height:44px;display:flex;align-items:center;justify-content:space-between;background:#1a1a2e;z-index:99999;padding:0 12px;box-shadow:0 1px 4px rgba(0,0,0,0.3);';" +
+                    "  var b = document.createElement('button');" +
+                    "  b.innerHTML = '\\u2190';" +
+                    "  b.onclick = function(){ history.back(); };" +
+                    "  b.style.cssText = 'background:none;border:none;color:#fff;font-size:22px;padding:8px 12px;cursor:pointer;';" +
+                    "  var x = document.createElement('button');" +
+                    "  x.innerHTML = '\\u2716';" +
+                    "  x.onclick = function(){ window.location.href = '/'; };" +
+                    "  x.style.cssText = 'background:none;border:none;color:#fff;font-size:18px;padding:8px 12px;cursor:pointer;';" +
+                    "  h.appendChild(b);" +
+                    "  var t = document.createElement('span');" +
+                    "  t.style.cssText = 'color:#fff;font-size:16px;font-weight:600;';" +
+                    "  t.textContent = '\\u5ba2\\u670d';" +
+                    "  h.appendChild(t);" +
+                    "  h.appendChild(x);" +
+                    "  document.body.appendChild(h);" +
+                    "  var c = document.querySelector('#app, #root, [class*=app], [class*=root], main');" +
+                    "  if(c) c.style.paddingTop = '44px';" +
+                    "  _chatNavAdded = true;" +
+                    "}" +
+                    "addChatNav();" +
                     "})();",
                     null
                 );
