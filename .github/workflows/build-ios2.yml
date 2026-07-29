@@ -118,6 +118,12 @@ jobs:
           npx cap sync ios
           test -d ios/App
 
+      - name: Apply iOS assets & patches
+        run: |
+          node scripts/apply-ios-assets.mjs
+          node scripts/patch-ios-plist.mjs
+          node scripts/patch-ios-viewcontroller.mjs
+
       - name: Verify iOS shell
         env:
           TARGET_URL: ${{ inputs.target_url }}
