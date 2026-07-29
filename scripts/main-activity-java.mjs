@@ -594,6 +594,8 @@ public class MainActivity extends AppCompatActivity {
                     "  return _origOpen.apply(this, arguments);" +
                     "};" +
                     "})();",
+                    null
+                );
                 view.evaluateJavascript(
                     "(function(){" +
                     "window._blobStore = window._blobStore || {};" +
