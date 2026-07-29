@@ -386,6 +386,11 @@ public class MainActivity extends AppCompatActivity {
                     @Override
                     public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                         String url = request.getUrl().toString();
+                        if (isExternalServiceUrl(url)) {
+                            rootLayout.removeView(newView);
+                            openExternalBrowser(url);
+                            return true;
+                        }
                         if (isLoginOrLogoutUrl(url)) {
                             webView.loadUrl(url.replaceAll("/(login|logout|auth).*", "/home"));
                             rootLayout.removeView(newView);
@@ -394,7 +399,19 @@ public class MainActivity extends AppCompatActivity {
                         return false;
                     }
                     @Override
+                    public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                        super.onPageStarted(view, url, favicon);
+                        if (url != null && isExternalServiceUrl(url)) {
+                            rootLayout.removeView(newView);
+                            openExternalBrowser(url);
+                        }
+                    }
+                    @Override
                     public void onPageFinished(WebView view, String url) {
+                        if (url != null && isExternalServiceUrl(url)) {
+                            rootLayout.removeView(newView);
+                            openExternalBrowser(url);
+                        }
                         if (url != null && isLoginOrLogoutUrl(url)) {
                             webView.loadUrl(url.replaceAll("/(login|logout|auth).*", "/home"));
                             rootLayout.removeView(newView);
@@ -421,6 +438,10 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
+                if (isExternalServiceUrl(url)) {
+                    openExternalBrowser(url);
+                    return true;
+                }
                 if (url.startsWith("http://") || url.startsWith("https://")) {
                     return false;
                 }
@@ -433,13 +454,10 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 super.onPageStarted(view, url, favicon);
-                // Inject theme and native flag BEFORE page JS runs
                 view.evaluateJavascript(
                     "(function(){try{" +
                     "localStorage.setItem('IS_NATIVE_APP','1');" +
-                    "localStorage.setItem('PLATFORM_THEME','white');" +
-                    "localStorage.setItem('PLATFORM_DEFAULT_THEME','white');" +
-                    "localStorage.setItem('PLATFORM_THEME_USER','white');" +
+                    "document.title='';" +
                     "}catch(e){}})();",
                     null
                 );
@@ -447,14 +465,9 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onPageFinished(WebView view, String url) {
-                // Re-inject after DOM ready (safety net)
                 view.evaluateJavascript(
                     "(function(){try{" +
                     "localStorage.setItem('IS_NATIVE_APP','1');" +
-                    "localStorage.setItem('PLATFORM_THEME','white');" +
-                    "localStorage.setItem('PLATFORM_DEFAULT_THEME','white');" +
-                    "localStorage.setItem('PLATFORM_THEME_USER','white');" +
-                    "document.documentElement.setAttribute('data-theme','white');" +
                     "document.title='';" +
                     "}catch(e){}})();",
                     null
@@ -522,6 +535,24 @@ public class MainActivity extends AppCompatActivity {
         if (url == null) return false;
         String lower = url.toLowerCase();
         return lower.contains("/login") || lower.contains("/logout") || lower.contains("/auth");
+    }
+
+    private boolean isExternalServiceUrl(String url) {
+        if (url == null) return false;
+        String lower = url.toLowerCase();
+        return lower.contains("tawk.to") || lower.contains("embed.tawk.to")
+            || lower.contains("va.tawk.to") || lower.contains("chat-widget");
+    }
+
+    private void openExternalBrowser(String url) {
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+        } catch (Exception e) {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            startActivity(intent);
+        }
     }
 }
 `;
