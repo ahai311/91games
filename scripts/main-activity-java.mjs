@@ -392,8 +392,17 @@ public class MainActivity extends AppCompatActivity {
                             openExternalBrowser(url);
                             return true;
                         }
+                        if (url.startsWith("blob:") || url.startsWith("data:")) {
+                            rootLayout.removeView(newView);
+                            return true;
+                        }
                         if (isLoginOrLogoutUrl(url)) {
                             webView.loadUrl(url.replaceAll("/(login|logout|auth).*", "/home"));
+                            rootLayout.removeView(newView);
+                            return true;
+                        }
+                        if (url.startsWith("http://") || url.startsWith("https://")) {
+                            webView.loadUrl(url);
                             rootLayout.removeView(newView);
                             return true;
                         }
@@ -412,11 +421,12 @@ public class MainActivity extends AppCompatActivity {
                         if (url != null && isExternalServiceUrl(url)) {
                             rootLayout.removeView(newView);
                             openExternalBrowser(url);
+                            return;
                         }
                         if (url != null && isLoginOrLogoutUrl(url)) {
                             webView.loadUrl(url.replaceAll("/(login|logout|auth).*", "/home"));
-                            rootLayout.removeView(newView);
                         }
+                        rootLayout.removeView(newView);
                     }
                 });
                 newView.setDownloadListener(createDownloadListener());
@@ -424,7 +434,7 @@ public class MainActivity extends AppCompatActivity {
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT
                 );
-                newView.setVisibility(View.VISIBLE);
+                newView.setVisibility(View.INVISIBLE);
                 rootLayout.addView(newView, lp);
                 WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
                 transport.setWebView(newView);
@@ -459,6 +469,15 @@ public class MainActivity extends AppCompatActivity {
                     "(function(){try{" +
                     "localStorage.setItem('IS_NATIVE_APP','1');" +
                     "document.title='';" +
+                    "window.__saveImage=function(dataUrl,filename){" +
+                    "  var a=document.createElement('a');" +
+                    "  a.href=dataUrl;" +
+                    "  a.download=filename||'image.png';" +
+                    "  document.body.appendChild(a);" +
+                    "  a.click();" +
+                    "  document.body.removeChild(a);" +
+                    "  return true;" +
+                    "};" +
                     "}catch(e){}})();",
                     null
                 );
@@ -511,10 +530,14 @@ public class MainActivity extends AppCompatActivity {
 
     private DownloadListener createDownloadListener() {
         return (url, userAgent, contentDisposition, mimetype, contentLength) -> {
+            if (url == null) return;
+            if (url.startsWith("blob:") || url.startsWith("data:")) return;
             try {
                 DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
                 request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, Uri.parse(url).getLastPathSegment());
+                String filename = Uri.parse(url).getLastPathSegment();
+                if (filename == null || filename.isEmpty()) filename = "download";
+                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
                     request.allowScanningByMediaScanner();
                     request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
@@ -525,9 +548,11 @@ public class MainActivity extends AppCompatActivity {
                     Toast.makeText(MainActivity.this, "下载已开始", Toast.LENGTH_SHORT).show();
                 }
             } catch (Exception e) {
-                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(intent);
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+                } catch (Exception ignored) {}
             }
         };
     }
