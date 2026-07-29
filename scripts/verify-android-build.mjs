@@ -9,7 +9,7 @@ import { resolveTargetSdkLevels } from './lib/resolve-target-sdk.mjs';
 import { resolveCiAppDisplayName } from './lib/app-display-name.mjs';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SHELL_PATCH_MARKER = 'shellPatchVersion=34';
+const SHELL_PATCH_MARKER = 'shellPatchVersion=37';
 const targetUrl = normalizeTargetUrl(
   process.env.TARGET_URL || process.env.APP_TARGET_URL,
   'https://example.com/',
@@ -141,8 +141,9 @@ if (productionReady && fs.existsSync(manifestPath)) {
     fail('AndroidManifest 须 android:hardwareAccelerated="true"');
   }
   const perms = manifest.match(/<uses-permission[^>]+>/g) || [];
+  const allowedPerms = ['INTERNET', 'CAMERA'];
   for (const p of perms) {
-    if (!/INTERNET/.test(p)) fail(`禁止多余权限: ${p}`);
+    if (!allowedPerms.some(a => p.includes(a))) fail(`禁止多余权限: ${p}`);
   }
 }
 

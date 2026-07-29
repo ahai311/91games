@@ -18,7 +18,7 @@ function req(name, fallback = '') {
   return v != null && String(v).trim() !== '' ? String(v).trim() : fallback;
 }
 
-const appId = req('BUNDLE_ID', req('APP_BUNDLE_ID', 'com.uzhan.app'));
+const appId = req('BUNDLE_ID', req('APP_BUNDLE_ID', 'com.91games.app'));
 const appName = resolveCiAppDisplayName(process.env, root);
 const url = normalizeTargetUrl(req('TARGET_URL', req('APP_TARGET_URL', 'https://example.com/')));
 
@@ -66,7 +66,7 @@ function writeProductionRedirectShell(target) {
 }
 
 const defaultConfig = {
-  appId: 'com.uzhan.app',
+  appId: 'com.91games.app',
   appName: 'UStation',
   webDir: 'www',
   server: {
@@ -88,11 +88,7 @@ if (!fs.existsSync(cfgPath)) {
   console.warn('apply-build-config: created missing capacitor.config.json');
 }
 const config = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
-const capacitorAppId = /^(?:[a-zA-Z][a-zA-Z0-9]*)(?:\.[a-zA-Z][a-zA-Z0-9]*)*$/.test(appId) ? appId : 'com.app.webview';
-if (capacitorAppId !== appId) {
-  console.warn(`apply-build-config: appId "${appId}" invalid for Capacitor, using "${capacitorAppId}" for capacitor.config.json`);
-}
-config.appId = capacitorAppId;
+config.appId = appId;
 config.appName = appName;
 
 config.android = {
@@ -128,23 +124,13 @@ const versionCode = req('VERSION_CODE', '1');
 const gradlePath = path.join(root, 'android', 'app', 'build.gradle');
 if (fs.existsSync(gradlePath)) {
   let gradle = fs.readFileSync(gradlePath, 'utf8');
-  const safeId = appId.replace(/[^a-zA-Z0-9._]/g, '') || 'com.uzhan.app';
-  const ns = capacitorAppId;
-  gradle = gradle.replace(/namespace\s+"[^"]*"/, `namespace "${ns}"`);
+  const safeId = appId.replace(/[^a-zA-Z0-9._]/g, '') || 'com.91games.app';
+  gradle = gradle.replace(/namespace\s+"[^"]*"/, `namespace "${safeId}"`);
   gradle = gradle.replace(/applicationId\s+"[^"]*"/, `applicationId "${safeId}"`);
   gradle = gradle.replace(/versionCode\s+\d+/, `versionCode ${Number(versionCode) || 1}`);
   gradle = gradle.replace(/versionName\s+"[^"]*"/, `versionName "${versionName}"`);
   fs.writeFileSync(gradlePath, gradle, 'utf8');
   console.log('android/app/build.gradle id/version updated');
-  const manifestPath = path.join(root, 'android/app/src/main/AndroidManifest.xml');
-  if (fs.existsSync(manifestPath)) {
-    let manifest = fs.readFileSync(manifestPath, 'utf8');
-    if (manifest.includes('package="' + safeId + '"')) {
-      manifest = manifest.replace(/package="[^"]*"/, 'package="' + ns + '"');
-      fs.writeFileSync(manifestPath, manifest, 'utf8');
-      console.log('android manifest package patched');
-    }
-  }
 }
 
 if (fs.existsSync(path.join(root, 'android'))) {

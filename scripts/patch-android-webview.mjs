@@ -94,6 +94,15 @@ if (fs.existsSync(manifestPath)) {
       'android:launchMode="singleTask"\n            android:windowSoftInputMode="adjustResize"',
     );
   }
+
+  const neededPerms = [
+    ['CAMERA', '<uses-permission android:name="android.permission.CAMERA" />'],
+  ];
+  for (const [check, xml] of neededPerms) {
+    if (!manifest.includes(check)) {
+      manifest = manifest.replace(/<\/manifest>/, `    ${xml}\n</manifest>`);
+    }
+  }
   manifest = manifest.replace(/<application\b([^>]*)>/, (m, attrs) => {
     let a = attrs.replace(/\s*android:label="[^"]*"/g, '');
     if (!/android:label=/.test(a)) {
