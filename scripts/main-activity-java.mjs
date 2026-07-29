@@ -658,7 +658,7 @@ public class MainActivity extends AppCompatActivity {
                     "var _chatNavAdded = false;" +
                     "function addChatNav(){" +
                     "  var p = window.location.pathname;" +
-                    "  if(p.indexOf('/support') < 0 && p.indexOf('/messages') < 0 && p.indexOf('/kf') < 0 && p.indexOf('/chat') < 0 && p.indexOf('/service') < 0 && p.indexOf('tawk') < 0){" +
+                    "  if(!p.match(/\\/support|\\/messages|\\/kf|\\/chat|\\/service|tawk/i)){" +
                     "    _chatNavAdded = false;" +
                     "    return;" +
                     "  }" +
