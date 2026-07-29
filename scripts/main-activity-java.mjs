@@ -557,7 +557,9 @@ public class MainActivity extends AppCompatActivity {
                         return false;
                     }
                 }
-                if (url != null && (
+                String curUrl = view != null ? view.getUrl() : "";
+                boolean onTawkBridge = curUrl != null && curUrl.contains("tawk-bridge");
+                if (!onTawkBridge && url != null && (
                     url.contains("tawk.to") ||
                     url.contains("embed.tawk.to") ||
                     url.contains("va.tawk.to") ||
@@ -578,27 +580,27 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 dismissSplashWhenReady();
+                boolean isTawkBridge = url != null && url.contains("tawk-bridge");
                 view.evaluateJavascript(
                     "(function(){try{localStorage.setItem('IS_NATIVE_APP','1');document.title='';}catch(e){}})();",
                     null
                 );
-                view.evaluateJavascript(
-                    "(function(){" +
-                    "var _origOpen = window.open;" +
-                    "window.open = function(url, target, features){" +
-                    "  if(url && typeof url === 'string' && (" +
-                    "    url.indexOf('tawk.to') >= 0 ||" +
-                    "    url.indexOf('embed.tawk.to') >= 0 ||" +
-                    "    url.indexOf('va.tawk.to') >= 0" +
-                    "  )){" +
-                    "    window.location.href = url;" +
-                    "    return null;" +
-                    "  }" +
-                    "  return _origOpen.apply(this, arguments);" +
-                    "};" +
-                    "})();",
-                    null
-                );
+                if (!isTawkBridge) {
+                    view.evaluateJavascript(
+                        "(function(){" +
+                        "var _origOpen = window.open;" +
+                        "window.open = function(url, target, features){" +
+                        "  if(url && typeof url === 'string' && (" +
+                        "    url.indexOf('tawk.to') >= 0 ||" +
+                        "    url.indexOf('embed.tawk.to') >= 0 ||" +
+                        "    url.indexOf('va.tawk.to') >= 0" +
+                        "  )){ return null; }" +
+                        "  return _origOpen.apply(this, arguments);" +
+                        "};" +
+                        "})();",
+                        null
+                    );
+                }
                 view.evaluateJavascript(
                     "(function(){" +
                     "window._blobStore = window._blobStore || {};" +
@@ -622,33 +624,6 @@ public class MainActivity extends AppCompatActivity {
                     "    navigator.clipboard = {writeText:function(t){window.NativeBridge.copyToClipboard(t||'');return Promise.resolve();}};" +
                     "  }" +
                     "}" +
-                    "var _origCreateElement = document.createElement.bind(document);" +
-                    "document.createElement = function(tag){" +
-                    "  var el = _origCreateElement(tag);" +
-                    "  if(tag.toLowerCase() === 'iframe'){" +
-                    "    var _origSetAttr = el.setAttribute.bind(el);" +
-                    "    el.setAttribute = function(name, val){" +
-                    "      if(name === 'src' && val && (" +
-                    "        val.indexOf('tawk.to') >= 0 || val.indexOf('embed.tawk.to') >= 0" +
-                    "      )){" +
-                    "        window.location.href = val;" +
-                    "        return;" +
-                    "      }" +
-                    "      return _origSetAttr(name, val);" +
-                    "    };" +
-                    "    Object.defineProperty(el, 'src', {" +
-                    "      set: function(v){" +
-                    "        if(v && (v.indexOf('tawk.to') >= 0 || v.indexOf('embed.tawk.to') >= 0)){" +
-                    "          window.location.href = v;" +
-                    "          return;" +
-                    "        }" +
-                    "        _origSetAttr('src', v);" +
-                    "      }," +
-                    "      get: function(){ return el.getAttribute('src') || ''; }" +
-                    "    });" +
-                    "  }" +
-                    "  return el;" +
-                    "};" +
                     "})();",
                     null
                 );
