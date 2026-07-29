@@ -1,9 +1,9 @@
-/** 系统 WebView + Custom Tabs 回退（唯一引擎） — v34: state save/restore + crash guard */
+/** 系统 WebView + Custom Tabs 回退（唯一引擎） */
 export function getMainActivitySource(pkg) {
   return `package ${pkg};
 
-import android.app.DownloadManager;
-import android.content.Context;
+import android.Manifest;
+import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
@@ -13,34 +13,38 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
-import android.os.Message;
+import android.provider.MediaStore;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
-import android.webkit.RenderProcessGoneDetail;
+import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
-import android.webkit.WebResourceError;
-import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
-import android.widget.Toast;
-import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.browser.customtabs.CustomTabsIntent;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.core.view.WindowCompat;
+import java.io.File;
+import java.io.FileOutputStream;
+import android.os.Handler;
+import android.os.Looper;
 
 public class MainActivity extends AppCompatActivity {
-    // shellPatchVersion=34 — state save/restore + crash guard
+    // shellPatchVersion=37 — clipboard polyfill + popup window + no click interceptor
     private static final int MIN_CHROME_MAJOR = 80;
-    private static final int SPLASH_MIN_MS = 2000;  // auto-skip after 2s
+    private static final int SPLASH_MIN_MS = 600;
+    private static final int PERM_REQUEST_CODE = 100;
+    private static final int FILE_CHOOSER_REQUEST = 101;
     private WebView webView;
     private ImageView splashView;
     private TextView splashSkipButton;
@@ -48,9 +52,112 @@ public class MainActivity extends AppCompatActivity {
     private boolean launchedCustomTab = false;
     private boolean splashDismissed = false;
     private long splashShownAt = 0L;
-    private String targetUrl;
-    private ValueCallback<Uri[]> uploadMessage;
-    private static final int FILE_CHOOSER_RESULT_CODE = 100;
+    private ValueCallback<Uri[]> fileUploadCallback;
+    private boolean permissionRequested = false;
+    private String pendingFileAccept = "";
+
+    private class NativeBridge {
+        @JavascriptInterface
+        public void copyToClipboard(String text) {
+            if (text == null || text.isEmpty()) return;
+            final String finalText = text;
+            new Handler(Looper.getMainLooper()).post(() -> {
+                try {
+                    android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    android.content.ClipData clip = android.content.ClipData.newPlainText("text", finalText);
+                    cm.setPrimaryClip(clip);
+                    android.widget.Toast.makeText(MainActivity.this, "已复制", android.widget.Toast.LENGTH_SHORT).show();
+                } catch (Exception e) {
+                    android.widget.Toast.makeText(MainActivity.this, "复制失败", android.widget.Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void saveBase64File(String base64Data, String filename) {
+            if (base64Data == null || base64Data.isEmpty()) {
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    android.widget.Toast.makeText(MainActivity.this, "保存失败: 无数据", android.widget.Toast.LENGTH_SHORT).show();
+                });
+                return;
+            }
+            String fName = (filename != null && !filename.isEmpty()) ? filename : ("qr_" + System.currentTimeMillis() + ".png");
+            String mime = "image/png";
+            if (fName.endsWith(".jpg") || fName.endsWith(".jpeg")) mime = "image/jpeg";
+            else if (fName.endsWith(".webp")) mime = "image/webp";
+            else if (fName.endsWith(".gif")) mime = "image/gif";
+            final String finalName = fName;
+            final String finalMime = mime;
+            new Thread(() -> {
+                try {
+                    byte[] bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT);
+                    saveBytesToFile(bytes, finalName, finalMime);
+                } catch (Exception e) {
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        android.widget.Toast.makeText(MainActivity.this, "保存失败: " + e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
+                    });
+                }
+            }).start();
+        }
+
+        @JavascriptInterface
+        public void saveHttpUrl(String url, String filename) {
+            if (url == null || url.isEmpty()) return;
+            String fName = (filename != null && !filename.isEmpty()) ? filename : "download";
+            final String finalUrl = url;
+            final String finalName = fName;
+            new Thread(() -> {
+                try {
+                    java.net.HttpURLConnection conn = (java.net.HttpURLConnection) new java.net.URL(finalUrl).openConnection();
+                    conn.setInstanceFollowRedirects(true);
+                    conn.connect();
+                    java.io.InputStream is = conn.getInputStream();
+                    java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                    byte[] buf = new byte[4096];
+                    int n;
+                    while ((n = is.read(buf)) != -1) baos.write(buf, 0, n);
+                    is.close();
+                    byte[] bytes = baos.toByteArray();
+                    String mime = conn.getContentType();
+                    if (mime == null) mime = "application/octet-stream";
+                    int semi = mime.indexOf(';');
+                    if (semi > 0) mime = mime.substring(0, semi).trim();
+                    saveBytesToFile(bytes, finalName, mime);
+                } catch (Exception e) {
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        android.widget.Toast.makeText(MainActivity.this, "保存失败: " + e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
+                    });
+                }
+            }).start();
+        }
+
+        @JavascriptInterface
+        public void openFilePicker(String accept) {
+            pendingFileAccept = (accept != null) ? accept : "image/*";
+            new Handler(Looper.getMainLooper()).post(() -> {
+                try {
+                    Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType(pendingFileAccept.isEmpty() ? "*/*" : pendingFileAccept);
+                    if (pendingFileAccept.contains(",")) {
+                        String[] types = pendingFileAccept.split(",");
+                        intent.setType("*/*");
+                        String[] mimeTypes = new String[types.length];
+                        for (int i = 0; i < types.length; i++) {
+                            String t = types[i].trim();
+                            if (t.equals("image/jpg")) t = "image/jpeg";
+                            mimeTypes[i] = t;
+                        }
+                        intent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes);
+                    }
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    startActivityForResult(Intent.createChooser(intent, "选择图片"), FILE_CHOOSER_REQUEST);
+                } catch (Exception e) {
+                    android.widget.Toast.makeText(MainActivity.this, "无法打开选择器", android.widget.Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -62,7 +169,7 @@ public class MainActivity extends AppCompatActivity {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), true);
 
         rootLayout = new FrameLayout(this);
-        rootLayout.setBackgroundColor(0xFFFFFFFF);
+        rootLayout.setBackgroundColor(0xFF0B0F1A);
 
         if (getResources().getBoolean(R.bool.launch_has_splash)) {
             splashView = new ImageView(this);
@@ -74,15 +181,14 @@ public class MainActivity extends AppCompatActivity {
                 ));
             splashShownAt = System.currentTimeMillis();
             addSplashSkipButton();
-            rootLayout.postDelayed(this::dismissSplashNow, 2000);
         }
         setContentView(rootLayout);
 
-        targetUrl = resolveTargetUrl();
+        String url = resolveTargetUrl();
         int wvMajor = getWebViewChromeMajor();
 
         if (wvMajor > 0 && wvMajor < MIN_CHROME_MAJOR) {
-            if (launchCustomTab(targetUrl)) {
+            if (launchCustomTab(url)) {
                 launchedCustomTab = true;
                 dismissSplashNow();
                 showCustomTabHint();
@@ -91,90 +197,52 @@ public class MainActivity extends AppCompatActivity {
         }
 
         webView = new WebView(this);
-        webView.setBackgroundColor(0xFFFFFFFF);
+        webView.setBackgroundColor(0xFF0B0F1A);
         webView.setVisibility(View.INVISIBLE);
         rootLayout.addView(webView, new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         ));
         configureWebView(webView);
+        webView.addJavascriptInterface(new NativeBridge(), "NativeBridge");
+        webView.loadUrl(url);
+    }
 
-        if (savedInstanceState != null) {
-            webView.restoreState(savedInstanceState);
-        } else {
-            webView.loadUrl(targetUrl);
-        }
-
-        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
-            @Override
-            public void handleOnBackPressed() {
-                if (launchedCustomTab) {
-                    finish();
-                    return;
-                }
-                if (webView != null && webView.canGoBack()) {
-                    webView.goBack();
-                } else {
-                    finish();
+    private void requestNeededPermissions() {
+        if (Build.VERSION.SDK_INT >= 23 && !permissionRequested) {
+            permissionRequested = true;
+            String[] perms;
+            if (Build.VERSION.SDK_INT >= 33) {
+                perms = new String[]{
+                    Manifest.permission.READ_MEDIA_IMAGES,
+                    Manifest.permission.CAMERA
+                };
+            } else {
+                perms = new String[]{
+                    Manifest.permission.READ_EXTERNAL_STORAGE,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                    Manifest.permission.CAMERA
+                };
+            }
+            boolean needRequest = false;
+            for (String p : perms) {
+                if (ContextCompat.checkSelfPermission(this, p) != PackageManager.PERMISSION_GRANTED) {
+                    needRequest = true;
+                    break;
                 }
             }
-        });
-    }
-
-    @Override
-    protected void onSaveInstanceState(Bundle outState) {
-        super.onSaveInstanceState(outState);
-        if (webView != null) {
-            webView.saveState(outState);
-        }
-    }
-
-    @Override
-    protected void onRestoreInstanceState(Bundle savedInstanceState) {
-        super.onRestoreInstanceState(savedInstanceState);
-        if (webView != null) {
-            webView.restoreState(savedInstanceState);
-        }
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        try {
-            CookieManager.getInstance().flush();
-        } catch (Exception ignored) {}
-        if (webView != null) {
-            webView.onPause();
-        }
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        if (webView != null) {
-            webView.onResume();
-        }
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode == FILE_CHOOSER_RESULT_CODE) {
-            if (uploadMessage != null) {
-                uploadMessage.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data));
-                uploadMessage = null;
+            if (needRequest) {
+                ActivityCompat.requestPermissions(this, perms, PERM_REQUEST_CODE);
             }
         }
-        super.onActivityResult(requestCode, resultCode, data);
     }
 
     @Override
-    protected void onDestroy() {
-        if (webView != null) {
-            webView.stopLoading();
-            webView.destroy();
-            webView = null;
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == PERM_REQUEST_CODE) {
+            // permissions granted or denied — continue either way
         }
-        super.onDestroy();
     }
 
     private void addSplashSkipButton() {
@@ -237,11 +305,7 @@ public class MainActivity extends AppCompatActivity {
         long elapsed = System.currentTimeMillis() - splashShownAt;
         long delay = Math.max(0L, SPLASH_MIN_MS - elapsed);
         rootLayout.postDelayed(this::dismissSplashNow, delay);
-        // Also start a delayed dismiss (safety net if JS bridge fails)
-        rootLayout.postDelayed(this::dismissSplashNow, 3000);
     }
-
-
 
     private String resolveTargetUrl() {
         try {
@@ -327,10 +391,96 @@ public class MainActivity extends AppCompatActivity {
         setContentView(root);
     }
 
-    private void configureWebView(WebView wv) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            WebView.setWebContentsDebuggingEnabled(true);
+    private void saveDownloadedFile(String url, String contentDisposition, String mimeType) {
+        try {
+            String filename = "download";
+            if (contentDisposition != null) {
+                int start = contentDisposition.indexOf("filename=");
+                if (start >= 0) {
+                    filename = contentDisposition.substring(start + 9);
+                    filename = filename.replace("\\\"", "").replace(";", "").trim();
+                    int q = filename.lastIndexOf('/');
+                    if (q >= 0) filename = filename.substring(q + 1);
+                }
+            }
+            if (url != null && filename.equals("download")) {
+                String path = Uri.parse(url).getLastPathSegment();
+                if (path != null && path.contains(".")) filename = path;
+            }
+            final String fName = filename;
+            final String fUrl = url;
+
+            if (url != null && url.startsWith("blob:")) {
+                final String fMimeType = mimeType;
+                final String fDisp = contentDisposition;
+                final String blobFileName = "qr_" + System.currentTimeMillis() + ".png";
+                String jsCode = "(function(){" +
+                    "var blob = window._blobStore && window._blobStore['" + url + "'];" +
+                    "if(blob){" +
+                    "  delete window._blobStore['" + url + "'];" +
+                    "  var reader = new FileReader();" +
+                    "  reader.onloadend = function(){" +
+                    "    var b64 = reader.result.split(',')[1] || '';" +
+                    "    if(b64 && window.NativeBridge) window.NativeBridge.saveBase64File(b64, '" + blobFileName + "');" +
+                    "  };" +
+                    "  reader.readAsDataURL(blob);" +
+                    "} else {" +
+                    "  window.NativeBridge.saveHttpUrl('" + url + "', '" + blobFileName + "');" +
+                    "}" +
+                    "})();";
+                webView.evaluateJavascript(jsCode, null);
+                return;
+            }
+
+            new Thread(() -> {
+                try {
+                    java.net.HttpURLConnection conn = (java.net.HttpURLConnection) new java.net.URL(fUrl).openConnection();
+                    conn.setInstanceFollowRedirects(true);
+                    conn.connect();
+                    java.io.InputStream is = conn.getInputStream();
+                    byte[] data = new byte[4096];
+                    java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                    int n;
+                    while ((n = is.read(data)) != -1) baos.write(data, 0, n);
+                    is.close();
+                    byte[] bytes = baos.toByteArray();
+                    saveBytesToFile(bytes, fName, mimeType != null ? mimeType : "application/octet-stream");
+                } catch (Exception e) {
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        android.widget.Toast.makeText(this, "保存失败: " + e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
+                    });
+                }
+            }).start();
+        } catch (Exception e) {
+            android.widget.Toast.makeText(this, "下载失败", android.widget.Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private void saveBytesToFile(byte[] bytes, String filename, String mimeType) throws Exception {
+        if (Build.VERSION.SDK_INT >= 29) {
+            android.content.ContentValues cv = new android.content.ContentValues();
+            cv.put(MediaStore.Downloads.DISPLAY_NAME, filename);
+            cv.put(MediaStore.Downloads.MIME_TYPE, mimeType);
+            cv.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+            Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
+            if (uri != null) {
+                java.io.OutputStream os = getContentResolver().openOutputStream(uri);
+                if (os != null) { os.write(bytes); os.close(); }
+            }
+        } else {
+            File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+            if (!dir.exists()) dir.mkdirs();
+            File file = new File(dir, filename);
+            FileOutputStream fos = new FileOutputStream(file);
+            fos.write(bytes);
+            fos.close();
+        }
+        new Handler(Looper.getMainLooper()).post(() -> {
+            android.widget.Toast.makeText(this, "已保存: " + filename, android.widget.Toast.LENGTH_SHORT).show();
+        });
+    }
+
+    private void configureWebView(WebView wv) {
         WebSettings s = wv.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -339,14 +489,12 @@ public class MainActivity extends AppCompatActivity {
         s.setUseWideViewPort(true);
         s.setLoadWithOverviewMode(true);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        s.setJavaScriptCanOpenWindowsAutomatically(true);
+        s.setSupportMultipleWindows(false);
         s.setAllowContentAccess(true);
         s.setAllowFileAccess(true);
-        s.setAllowFileAccessFromFileURLs(true);
-        s.setAllowUniversalAccessFromFileURLs(true);
         s.setMediaPlaybackRequiresUserGesture(false);
-        s.setCacheMode(WebSettings.LOAD_DEFAULT);
-        s.setSupportMultipleWindows(true);
-        s.setJavaScriptCanOpenWindowsAutomatically(true);
+        s.setCacheMode(WebSettings.LOAD_NO_CACHE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             CookieManager.getInstance().setAcceptCookie(true);
             CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true);
@@ -356,228 +504,129 @@ public class MainActivity extends AppCompatActivity {
             s.setUserAgentString(ua + " UStationApp/1.0");
         }
 
+        wv.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> {
+            saveDownloadedFile(url, contentDisposition, mimeType);
+        });
+
         wv.setWebChromeClient(new WebChromeClient() {
             @Override
             public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
-                if (uploadMessage != null) {
-                    uploadMessage.onReceiveValue(null);
-                    uploadMessage = null;
+                if (fileUploadCallback != null) {
+                    fileUploadCallback.onReceiveValue(null);
                 }
-                uploadMessage = filePathCallback;
-                Intent intent = fileChooserParams.createIntent();
+                fileUploadCallback = filePathCallback;
+                Intent intent = null;
                 try {
-                    startActivityForResult(intent, FILE_CHOOSER_RESULT_CODE);
+                    intent = fileChooserParams.createIntent();
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                } catch (Exception ignored) {}
+                if (intent == null) {
+                    intent = new Intent(Intent.ACTION_GET_CONTENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType("image/*");
+                }
+                try {
+                    startActivityForResult(Intent.createChooser(intent, "选择图片"), FILE_CHOOSER_REQUEST);
                 } catch (Exception e) {
-                    uploadMessage = null;
+                    fileUploadCallback = null;
                     return false;
                 }
-                return true;
-            }
-
-            @Override
-            public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
-                WebView newView = new WebView(MainActivity.this);
-                WebSettings newSettings = newView.getSettings();
-                newSettings.setJavaScriptEnabled(true);
-                newSettings.setDomStorageEnabled(true);
-                newSettings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-                newSettings.setAllowContentAccess(true);
-                newSettings.setAllowFileAccess(true);
-                newView.setWebViewClient(new WebViewClient() {
-                    @Override
-                    public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                        String url = request.getUrl().toString();
-                        if (isExternalServiceUrl(url)) {
-                            rootLayout.removeView(newView);
-                            openExternalBrowser(url);
-                            return true;
-                        }
-                        if (url.startsWith("blob:") || url.startsWith("data:")) {
-                            rootLayout.removeView(newView);
-                            return true;
-                        }
-                        if (isLoginOrLogoutUrl(url)) {
-                            webView.loadUrl(url.replaceAll("/(login|logout|auth).*", "/home"));
-                            rootLayout.removeView(newView);
-                            return true;
-                        }
-                        if (url.startsWith("http://") || url.startsWith("https://")) {
-                            webView.loadUrl(url);
-                            rootLayout.removeView(newView);
-                            return true;
-                        }
-                        return false;
-                    }
-                    @Override
-                    public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-                        super.onPageStarted(view, url, favicon);
-                        if (url != null && isExternalServiceUrl(url)) {
-                            rootLayout.removeView(newView);
-                            openExternalBrowser(url);
-                        }
-                    }
-                    @Override
-                    public void onPageFinished(WebView view, String url) {
-                        if (url != null && isExternalServiceUrl(url)) {
-                            rootLayout.removeView(newView);
-                            openExternalBrowser(url);
-                            return;
-                        }
-                        if (url != null && isLoginOrLogoutUrl(url)) {
-                            webView.loadUrl(url.replaceAll("/(login|logout|auth).*", "/home"));
-                        }
-                        rootLayout.removeView(newView);
-                    }
-                });
-                newView.setDownloadListener(createDownloadListener());
-                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                );
-                newView.setVisibility(View.INVISIBLE);
-                rootLayout.addView(newView, lp);
-                WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
-                transport.setWebView(newView);
-                resultMsg.sendToTarget();
                 return true;
             }
         });
 
-        wv.setDownloadListener(createDownloadListener());
-
         wv.setWebViewClient(new WebViewClient() {
             @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                String url = request.getUrl().toString();
-                if (isExternalServiceUrl(url)) {
-                    openExternalBrowser(url);
-                    return true;
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                if (url != null && (
+                    url.startsWith("tg:") ||
+                    url.startsWith("mailto:") ||
+                    url.startsWith("tel:") ||
+                    url.startsWith("sms:") ||
+                    url.startsWith("whatsapp:") ||
+                    url.startsWith("line:")
+                )) {
+                    try {
+                        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                        startActivity(intent);
+                        return true;
+                    } catch (Exception e) {
+                        return false;
+                    }
                 }
-                if (url.startsWith("http://") || url.startsWith("https://")) {
-                    return false;
-                }
-                try {
-                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                    startActivity(intent);
-                } catch (Exception ignored) {}
-                return true;
-            }
-            @Override
-            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-                super.onPageStarted(view, url, favicon);
-                view.evaluateJavascript(
-                    "(function(){try{" +
-                    "localStorage.setItem('IS_NATIVE_APP','1');" +
-                    "document.title='';" +
-                    "window.__saveImage=function(dataUrl,filename){" +
-                    "  var a=document.createElement('a');" +
-                    "  a.href=dataUrl;" +
-                    "  a.download=filename||'image.png';" +
-                    "  document.body.appendChild(a);" +
-                    "  a.click();" +
-                    "  document.body.removeChild(a);" +
-                    "  return true;" +
-                    "};" +
-                    "}catch(e){}})();",
-                    null
-                );
+                return false;
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
+                dismissSplashWhenReady();
                 view.evaluateJavascript(
-                    "(function(){try{" +
-                    "localStorage.setItem('IS_NATIVE_APP','1');" +
-                    "document.title='';" +
-                    "}catch(e){}})();",
+                    "(function(){try{localStorage.setItem('IS_NATIVE_APP','1');document.title='';}catch(e){}})();",
                     null
                 );
-            }
-
-            @Override
-            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (request.isForMainFrame()) {
-                    dismissSplashNow();
-                    String errUrl = request.getUrl() != null ? request.getUrl().toString() : "";
-                    String errMsg = error != null ? error.getDescription() != null ? error.getDescription().toString() : "" : "";
-                    view.evaluateJavascript(
-                        "(function(){try{document.body.innerHTML='<div style=\\\"display:flex;align-items:center;justify-content:center;height:100vh;background:#0B0F1A;color:#fff;font-family:sans-serif;text-align:center;padding:20px\\\"><div><h2>\\u7f51\\u7edc\\u52a0\\u8f7d\\u5931\\u8d25</h2><p style=\\\"opacity:0.7\\\">\\u8bf7\\u68c0\\u67e5\\u7f51\\u7edc\\u8fde\\u63a5\\u540e\\u91cd\\u8bd5</p><button onclick=\\\"location.reload()\\\" style=\\\"margin-top:16px;padding:8px 24px;border:1px solid #fff;background:transparent;color:#fff;border-radius:4px;font-size:14px\\\">\\u91cd\\u8bd5</button></div></div>';document.title='';}catch(e){}})();",
-                        null
-                    );
-                }
-            }
-
-            @Override
-            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
-                if (webView != null) {
-                    webView.stopLoading();
-                    webView.destroy();
-                    webView = null;
-                }
-                webView = new WebView(MainActivity.this);
-                webView.setBackgroundColor(0xFFFFFFFF);
-                webView.setVisibility(View.VISIBLE);
-                rootLayout.addView(webView, new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                ));
-                configureWebView(webView);
-                webView.loadUrl(targetUrl != null ? targetUrl : resolveTargetUrl());
-                return true;
+                view.evaluateJavascript(
+                    "(function(){" +
+                    "window._blobStore = window._blobStore || {};" +
+                    "var _origCreate = URL.createObjectURL;" +
+                    "URL.createObjectURL = function(blob){" +
+                    "  var url = _origCreate.call(this, blob);" +
+                    "  window._blobStore[url] = blob;" +
+                    "  return url;" +
+                    "};" +
+                    "if(window.NativeBridge){" +
+                    "  window._clippy = function(text){" +
+                    "    try{window.NativeBridge.copyToClipboard(text||'');}catch(e){}" +
+                    "  };" +
+                    "  if(navigator.clipboard){" +
+                    "    var _origWrite = navigator.clipboard.writeText.bind(navigator.clipboard);" +
+                    "    navigator.clipboard.writeText = function(text){" +
+                    "      window.NativeBridge.copyToClipboard(text||'');" +
+                    "      return Promise.resolve();" +
+                    "    };" +
+                    "  } else {" +
+                    "    navigator.clipboard = {writeText:function(t){window.NativeBridge.copyToClipboard(t||'');return Promise.resolve();}};" +
+                    "  }" +
+                    "}" +
+                    "})();",
+                    null
+                );
             }
         });
     }
 
-    private DownloadListener createDownloadListener() {
-        return (url, userAgent, contentDisposition, mimetype, contentLength) -> {
-            if (url == null) return;
-            if (url.startsWith("blob:") || url.startsWith("data:")) return;
-            try {
-                DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
-                request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-                String filename = Uri.parse(url).getLastPathSegment();
-                if (filename == null || filename.isEmpty()) filename = "download";
-                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
-                    request.allowScanningByMediaScanner();
-                    request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == FILE_CHOOSER_REQUEST) {
+            if (fileUploadCallback != null) {
+                Uri[] results = null;
+                if (resultCode == Activity.RESULT_OK && data != null) {
+                    if (data.getClipData() != null) {
+                        int count = data.getClipData().getItemCount();
+                        results = new Uri[count];
+                        for (int i = 0; i < count; i++) {
+                            results[i] = data.getClipData().getItemAt(i).getUri();
+                        }
+                    } else if (data.getDataString() != null) {
+                        results = new Uri[]{Uri.parse(data.getDataString())};
+                    }
                 }
-                DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
-                if (dm != null) {
-                    dm.enqueue(request);
-                    Toast.makeText(MainActivity.this, "下载已开始", Toast.LENGTH_SHORT).show();
-                }
-            } catch (Exception e) {
-                try {
-                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    startActivity(intent);
-                } catch (Exception ignored) {}
+                fileUploadCallback.onReceiveValue(results);
+                fileUploadCallback = null;
             }
-        };
+        }
     }
 
-    private boolean isLoginOrLogoutUrl(String url) {
-        if (url == null) return false;
-        String lower = url.toLowerCase();
-        return lower.contains("/login") || lower.contains("/logout") || lower.contains("/auth");
-    }
-
-    private boolean isExternalServiceUrl(String url) {
-        if (url == null) return false;
-        String lower = url.toLowerCase();
-        return lower.contains("tawk.to") || lower.contains("embed.tawk.to")
-            || lower.contains("va.tawk.to") || lower.contains("chat-widget");
-    }
-
-    private void openExternalBrowser(String url) {
-        try {
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(intent);
-        } catch (Exception e) {
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-            startActivity(intent);
+    @Override
+    public void onBackPressed() {
+        if (launchedCustomTab) {
+            finish();
+            return;
+        }
+        if (webView != null && webView.canGoBack()) {
+            webView.goBack();
+        } else {
+            super.onBackPressed();
         }
     }
 }
