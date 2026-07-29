@@ -40,7 +40,7 @@ import androidx.core.view.WindowCompat;
 public class MainActivity extends AppCompatActivity {
     // shellPatchVersion=34 — state save/restore + crash guard
     private static final int MIN_CHROME_MAJOR = 80;
-    private static final int SPLASH_MIN_MS = 3000;  // wait for SPA framework mount
+    private static final int SPLASH_MIN_MS = 2000;  // auto-skip after 2s
     private WebView webView;
     private ImageView splashView;
     private TextView splashSkipButton;
@@ -74,6 +74,7 @@ public class MainActivity extends AppCompatActivity {
                 ));
             splashShownAt = System.currentTimeMillis();
             addSplashSkipButton();
+            rootLayout.postDelayed(this::dismissSplashNow, 2000);
         }
         setContentView(rootLayout);
 
