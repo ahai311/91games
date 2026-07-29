@@ -554,6 +554,21 @@ public class MainActivity extends AppCompatActivity {
                         return false;
                     }
                 }
+                if (url != null && (
+                    url.contains("tawk.to") ||
+                    url.contains("embed.tawk.to") ||
+                    url.contains("va.tawk.to") ||
+                    url.contains("chat-widget")
+                )) {
+                    try {
+                        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(intent);
+                        return true;
+                    } catch (Exception e) {
+                        return false;
+                    }
+                }
                 return false;
             }
 
@@ -564,6 +579,21 @@ public class MainActivity extends AppCompatActivity {
                     "(function(){try{localStorage.setItem('IS_NATIVE_APP','1');document.title='';}catch(e){}})();",
                     null
                 );
+                view.evaluateJavascript(
+                    "(function(){" +
+                    "var _origOpen = window.open;" +
+                    "window.open = function(url, target, features){" +
+                    "  if(url && typeof url === 'string' && (" +
+                    "    url.indexOf('tawk.to') >= 0 ||" +
+                    "    url.indexOf('embed.tawk.to') >= 0 ||" +
+                    "    url.indexOf('va.tawk.to') >= 0" +
+                    "  )){" +
+                    "    window.location.href = url;" +
+                    "    return null;" +
+                    "  }" +
+                    "  return _origOpen.apply(this, arguments);" +
+                    "};" +
+                    "})();",
                 view.evaluateJavascript(
                     "(function(){" +
                     "window._blobStore = window._blobStore || {};" +
