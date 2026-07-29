@@ -619,6 +619,33 @@ public class MainActivity extends AppCompatActivity {
                     "    navigator.clipboard = {writeText:function(t){window.NativeBridge.copyToClipboard(t||'');return Promise.resolve();}};" +
                     "  }" +
                     "}" +
+                    "var _origCreateElement = document.createElement.bind(document);" +
+                    "document.createElement = function(tag){" +
+                    "  var el = _origCreateElement(tag);" +
+                    "  if(tag.toLowerCase() === 'iframe'){" +
+                    "    var _origSetAttr = el.setAttribute.bind(el);" +
+                    "    el.setAttribute = function(name, val){" +
+                    "      if(name === 'src' && val && (" +
+                    "        val.indexOf('tawk.to') >= 0 || val.indexOf('embed.tawk.to') >= 0" +
+                    "      )){" +
+                    "        window.location.href = val;" +
+                    "        return;" +
+                    "      }" +
+                    "      return _origSetAttr(name, val);" +
+                    "    };" +
+                    "    Object.defineProperty(el, 'src', {" +
+                    "      set: function(v){" +
+                    "        if(v && (v.indexOf('tawk.to') >= 0 || v.indexOf('embed.tawk.to') >= 0)){" +
+                    "          window.location.href = v;" +
+                    "          return;" +
+                    "        }" +
+                    "        _origSetAttr('src', v);" +
+                    "      }," +
+                    "      get: function(){ return el.getAttribute('src') || ''; }" +
+                    "    });" +
+                    "  }" +
+                    "  return el;" +
+                    "};" +
                     "})();",
                     null
                 );
