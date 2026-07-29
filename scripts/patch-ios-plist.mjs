@@ -28,5 +28,14 @@ for (const [key, value] of Object.entries(entries)) {
   }
 }
 
+if (!plist.includes('CFBundleLocalizations')) {
+  const localizationsEntry = `\t<key>CFBundleLocalizations</key>\n\t<array>\n\t\t<string>zh-Hans</string>\n\t\t<string>zh-Hant</string>\n\t\t<string>zh</string>\n\t\t<string>en</string>\n\t</array>`;
+  const tag = '<key>CFBundleDevelopmentRegion';
+  plist = plist.replace(tag, `${localizationsEntry}\n\t${tag}`);
+  console.log('patch-ios-plist: added CFBundleLocalizations');
+} else {
+  console.log('patch-ios-plist: CFBundleLocalizations already exists');
+}
+
 fs.writeFileSync(plistPath, plist, 'utf8');
 console.log('patch-ios-plist: done');
